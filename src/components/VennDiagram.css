@@ -1,0 +1,38 @@
+.venn-diagram {
+  display: block;
+  width: 100%;
+  max-width: 26rem;
+  user-select: none;
+}
+
+.venn-frame {
+  fill: none;
+  stroke: #d0d0d0;
+  rx: 8;
+}
+
+.venn-region {
+  fill: #4467c4;
+  fill-opacity: 0;
+  cursor: pointer;
+  transition: fill-opacity 120ms ease;
+}
+
+.venn-region--on {
+  fill-opacity: 0.38;
+}
+
+.venn-outline {
+  fill: none;
+  stroke: #333;
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+
+.venn-label {
+  font-size: 18px;
+  font-weight: 600;
+  fill: #333;
+  text-anchor: middle;
+  pointer-events: none;
+}

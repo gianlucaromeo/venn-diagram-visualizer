@@ -1,122 +1,157 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { useEffect, useMemo, useRef, useState } from 'react';
+import VennDiagram from './components/VennDiagram.jsx';
+import {
+  EMPTY,
+  equals,
+  evaluateExpression,
+  maskToExpression,
+  symmetricDifference,
+  toggleRegion,
+} from './core/index.js';
+import './App.css';
 
-function App() {
-  const [count, setCount] = useState(0)
+const SYMBOLS = ['A', 'B', 'C', '∪', '∩', '−', "'", '(', ')', 'U', '∅'];
 
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+function useEvaluated(input) {
+  return useMemo(() => {
+    if (input.trim() === '') return { empty: true };
+    try {
+      return { mask: evaluateExpression(input) };
+    } catch (error) {
+      return { error };
+    }
+  }, [input]);
 }
 
-export default App
+function readHash() {
+  const params = new URLSearchParams(window.location.hash.slice(1));
+  return {
+    expression: params.get('q') ?? 'A ∪ B',
+    compare: params.get('vs') ?? '',
+  };
+}
+
+export default function App() {
+  const [expression, setExpression] = useState(() => readHash().expression);
+  const [compare, setCompare] = useState(() => readHash().compare);
+  const inputRef = useRef(null);
+
+  const result = useEvaluated(expression);
+  const compareResult = useEvaluated(compare);
+
+  // On a parse error mid-keystroke, keep showing the last valid drawing.
+  // Tracked with the store-previous-render-info pattern (setState during
+  // render), which React supports and restarts the render for.
+  const [lastGood, setLastGood] = useState(EMPTY);
+  const currentMask = result.empty ? EMPTY : result.mask;
+  if (currentMask !== undefined && currentMask !== lastGood) {
+    setLastGood(currentMask);
+  }
+  const exprMask = currentMask ?? lastGood;
+
+  const comparing =
+    result.mask !== undefined && compareResult.mask !== undefined;
+  const areEqual = comparing && equals(result.mask, compareResult.mask);
+  // When the two expressions differ, shade exactly the regions where they
+  // disagree — a visual counterexample.
+  const displayedMask =
+    comparing && !areEqual
+      ? symmetricDifference(result.mask, compareResult.mask)
+      : exprMask;
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (expression.trim() !== '') params.set('q', expression);
+    if (compare.trim() !== '') params.set('vs', compare);
+    const hash = params.toString();
+    window.history.replaceState(null, '', hash ? `#${hash}` : window.location.pathname);
+  }, [expression, compare]);
+
+  function insertSymbol(symbol) {
+    const input = inputRef.current;
+    const start = input.selectionStart ?? expression.length;
+    const end = input.selectionEnd ?? expression.length;
+    const next = expression.slice(0, start) + symbol + expression.slice(end);
+    setExpression(next);
+    requestAnimationFrame(() => {
+      input.focus();
+      input.setSelectionRange(start + symbol.length, start + symbol.length);
+    });
+  }
+
+  function handleRegionClick(region) {
+    setExpression(maskToExpression(toggleRegion(exprMask, region)));
+  }
+
+  return (
+    <main className="app">
+      <h1>Venn Diagram Visualizer</h1>
+      <p className="tagline">
+        Type a set expression over A, B, C — or click regions to build one.
+      </p>
+
+      <label className="field">
+        <span>Expression</span>
+        <input
+          ref={inputRef}
+          value={expression}
+          onChange={(e) => setExpression(e.target.value)}
+          spellCheck={false}
+          autoComplete="off"
+          placeholder="e.g. (A - B - C) ∪ (A ∩ B) ∩ C"
+        />
+      </label>
+
+      <div className="toolbar" role="toolbar" aria-label="Insert symbol">
+        {SYMBOLS.map((symbol) => (
+          <button key={symbol} type="button" onClick={() => insertSymbol(symbol)}>
+            {symbol}
+          </button>
+        ))}
+      </div>
+
+      {result.error && (
+        <pre className="error" aria-live="polite">
+          {expression + '\n'}
+          {' '.repeat(result.error.position ?? 0) + '^ '}
+          {result.error.message}
+        </pre>
+      )}
+
+      <VennDiagram mask={displayedMask} onRegionClick={handleRegionClick} />
+
+      {result.mask !== undefined && (
+        <p className="readout">
+          Canonical form: <code>{maskToExpression(result.mask)}</code>
+        </p>
+      )}
+
+      <section className="identity">
+        <label className="field">
+          <span>Compare with (optional)</span>
+          <input
+            value={compare}
+            onChange={(e) => setCompare(e.target.value)}
+            spellCheck={false}
+            autoComplete="off"
+            placeholder="e.g. A' ∩ B' to check against (A ∪ B)'"
+          />
+        </label>
+        {compareResult.error && (
+          <pre className="error" aria-live="polite">
+            {compare + '\n'}
+            {' '.repeat(compareResult.error.position ?? 0) + '^ '}
+            {compareResult.error.message}
+          </pre>
+        )}
+        {comparing && (
+          <p className={`verdict ${areEqual ? 'verdict--equal' : 'verdict--differs'}`}>
+            {areEqual
+              ? 'Equal — the two expressions denote the same set for every A, B, C.'
+              : 'Not equal — the shaded regions are where they disagree.'}
+          </p>
+        )}
+      </section>
+    </main>
+  );
+}
